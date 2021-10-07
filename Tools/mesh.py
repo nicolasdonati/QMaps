@@ -4,6 +4,7 @@ import numpy as np
 from scipy import spatial
 import scipy as sp
 ##
+import os
 from os.path import join, exists
 
 #################################
@@ -31,8 +32,8 @@ class mesh:
     samples = None
     
     
-    def __init__(self, path, normalized = False, normals=True,
-                 neighbors=True, spectral=30, verbose=0):
+    def __init__(self, path, normalized = False, normals=False,
+                 neighbors=False, spectral=30, verbose=0):
         self.path = path
         self.name = path.split('/')[-1]
         self.folder = self.path[:-len(self.name)-1]
@@ -92,11 +93,9 @@ class mesh:
             return  # no need to recompute n
         self.n = igl.per_face_normals(self.v,self.f,0*self.v[0])
     
-    def frames_on_faces(self, smooth=True):
+    def frames_on_faces(self):
         if self.n is None: self.normals_on_faces()
         v = self.v
-        if smooth:
-            v = self.v_smooth
         v1 = v[self.f[:,0],:]
         v2 = v[self.f[:,1],:]
         v3 = v[self.f[:,2],:]
@@ -111,9 +110,13 @@ class mesh:
             return  # no need to recompute n
         self.nv = igl.per_vertex_normals(self.v,self.f)
     
-    ######
+    
+    ###### loading spectral functions and vectors
     def spectral(self, k = 30, save=True):
-        save_spectral = join(self.folder, 'spectral', self.name[:-4]+'.npz')
+        spec_folder = join(self.folder, 'spectral')
+        if not os.path.exists(spec_folder):
+            os.makedirs(spec_folder)
+        save_spectral = join(spec_folder, self.name[:-4]+'.npz')
         load = exists(save_spectral)
         if load:
             F =  np.load(save_spectral)
@@ -132,6 +135,7 @@ class mesh:
         #self.eig_trans = (m @ self.eig).T
         ###
         if save:
+            print('saving spectral')
             if load and np.isin('ceig', F.files):
                 np.savez(save_spectral, eig=self.eig, val=self.vals, ceig=F['ceig'], cval=F['cval'])
                 return
@@ -141,7 +145,10 @@ class mesh:
     def complex_spectral(self, k = 30, save=True):
         if self.verbose>0: print("loading complex spectral =", k)
         ###
-        save_spectral = join(self.folder, 'spectral', self.name[:-4]+'.npz')
+        spec_folder = join(self.folder, 'spectral')
+        if not os.path.exists(spec_folder):
+            os.makedirs(spec_folder)
+        save_spectral = join(spec_folder, self.name[:-4]+'.npz')
         load = exists(save_spectral)
         if load:
             F =  np.load(save_spectral)
@@ -161,58 +168,10 @@ class mesh:
                 np.savez(save_spectral, eig=F['eig'], val=F['val'], ceig=self.ceig, cval=self.cvals)
                 return
             np.savez(save_spectral, ceig=self.ceig, cval=self.cvals)
-    
-    ######
-    def smooth(self, k=30, affect_shape=False):
-        if self.eig is None or self.eig.shape[1] < k:
-            print("need (more) spectral for smooth [k =",k,"]")
-            self.spectral(k)
-        X = self.eig_trans[:k] @ self.v
-        v_smooth = self.eig[:,:k] @ X
-        #v_smooth -= np.mean(v_smooth, axis=0)
-        if affect_shape: self.v = v_smooth
-        return v_smooth, X
-    
-    def smooth_sigmoid(self,k=30,trunc_thresh=1e-2,smooth_thresh=10, affect_shape=False):
-        #compute the sigmoid weights
-        if k == 1: weights = 1
-        elif k >= smooth_thresh:
-            t = -1/(smooth_thresh-1) * np.log(1/(1-trunc_thresh)-1)
-            weights = 1/(1+np.exp(t*np.arange(1-k,smooth_thresh)))
-        else:
-            t = -1/(k-1) * np.log(1/(1-trunc_thresh)-1)
-            weights = 1/(1+np.exp(t*np.arange(1-k,k)))
-        
-        k = weights.shape[0]; #print('k_smoothshells:', k)
-        #recompute eigs if necessary
-        if self.eig is None or self.eig.shape[1] < k:
-            print("need (more) spectral for smooth [k =",k,"]")
-            self.spectral(k)
-        #project the geometry on the eigenfunctions
-        X = weights[:, None] * (self.eig_trans[:k] @ self.v)
-        v_smooth = self.eig[:,:k] @ X
-        
-        self.v_smooth = v_smooth  ## store smooth shape as different embedding
-        if affect_shape:
-            self.v = v_smooth
-            self.normals_on_faces();
-        return v_smooth, X
-    
-    def deform(self, tau, J=None):
-        ##deformation affecting v_smooth (but maybe also v in order to compute normals)
-        k = tau.shape[0]
-        def_field = self.eig[:,:k] @ tau
-        if J is not None:
-            J_def_field = J @ def_field[:,:,None]
-            self.v_def = self.v_smooth + J_def_field
-            self.v_def_total = self.v + J_def_field
-        else:
-            self.v_def = self.v_smooth + def_field
-            self.v_def_total = self.v + def_field
-        self.normals_on_faces(with_def=True)
-        self.normals_on_vertices(with_def=True)
                             
     
+    ###### farther point sampling (with fixed seed for reproducibility)
+    ###### here seed needs to be less than nv
     def fps_3d(self, n, seed=42):
         if n > self.v.shape[0]: n = self.v.shape[0]
 
@@ -228,7 +187,8 @@ class mesh:
         self.samples = S
         return S
     
-    ######
+
+    ###### to build complex Laplacian
     def local_basis(self):
         self.halfedge()
         _, self.he_start = np.unique(self.e[:,0], return_index=1)  #starting he for each vertex
@@ -238,7 +198,7 @@ class mesh:
         he_emb = self.v[self.e[he][:,1]] - self.v[self.e[he][:,0]]
         return he_emb
     
-    def embed_vector_field(self, VF, reverse=False):
+    def embed_vector_field(self, VF):
         ## VF is a complex per-vertex, we have to translate this into 3d vectors
         ## first find the two halfedges concerned (in the right order)
         ## also keep the angle within
@@ -255,14 +215,10 @@ class mesh:
         in_ang_VF = np.zeros(self.v.shape[0])
         i = 0
         while np.any(rotate==0):
-            ##circulate CW or CCW (something seems off on CCW, results are awkward..)
-            if not reverse:
-                he = self.op[he]
-                he = self.nex[he]
-            else:
-                he = self.nex[he]
-                he = self.nex[he]
-                he = self.op[he]
+            #circulate (here CW)
+            he = self.op[he]
+            he = self.nex[he]
+            
             i+=1
             ##compare angles
             he_cur_angle = self.he_angles_norm[he]
@@ -376,7 +332,7 @@ class mesh:
         nf = self.f.shape[0]
         nv = self.v.shape[0]
         #
-        if not hasattr(self, 'v4'): self.frames_on_faces(smooth=False)
+        if not hasattr(self, 'v4'): self.frames_on_faces()
         #
         F = np.zeros((3*nf,3))
         Ir = [];
@@ -429,25 +385,58 @@ class mesh:
         I = []
         J = []
         V = []
+
         #
-        idv = np.arange(self.v.shape[0])
-        jdv = self.e[self.he_start][:,1]
-        kdv = self.e[self.nex[self.op[self.he_start]]][:,1]
-        #
-        eij = self.v[jdv] - self.v[idv]
-        eik = self.v[kdv] - self.v[idv]
-        lij = np.linalg.norm(eij, axis=1)
-        lik = np.linalg.norm(eik, axis=1)
-        #phi = X.he_angles[X.nex[X.op[X.he_start]]]
-        phi = self.he_angles_norm[self.nex[self.op[self.he_start]]]
-        L = np.linalg.norm(eik - (np.cos(phi)*lik/lij)[:,None]*eij, axis=1)
-        #
-        I = np.concatenate([2*idv, 2*idv, 2*idv+1, 2*idv+1, 2*idv+1])
-        J = np.concatenate([idv, jdv, idv, jdv, kdv])
-        V = np.concatenate([-1/lij, 1/lij, -1/L+lik/(L*lij)*np.cos(phi),
-                            -lik/(L*lij)*np.cos(phi), 1/L])
+        Vjs = []
+        rotate = np.zeros(self.v.shape[0], dtype=int)  #will keep in degree of vertex
+        he = np.copy(self.he_start)
+        i = 0
+        while np.any(rotate==0):
+            #-- get [vj] and store it in X; same for fj - fi in f
+            lij = np.linalg.norm(self.v[self.e[he][:,1]] - self.v[self.e[he][:,0]], axis=1)
+            aij = self.he_angles_norm[he]
+            vj = lij[:, None] * np.cos(np.stack([aij, np.pi/2 - aij], axis=-1))
+            vj[rotate>0]=0 # do not add values if cycle done
+            Vjs+=[vj]
+
+            #-- circulate CW
+            he = self.op[he]
+            he = self.nex[he]
+            i+=1
+            #-- update rot mask once cycle is done
+            rot_mask = (self.he_start == he) * (rotate == 0)
+            rotate[rot_mask] = i
+
+        #-- build and invert local systems
+        Vjs = np.stack(Vjs, axis=1)
+        Vjs_inv = np.linalg.pinv(Vjs)
+
+        #-- new rotation around the vertex to add in the coefficients to the sparse matrix
+        rotate = np.zeros(self.v.shape[0], dtype=int)  #will keep in degree of vertex
+        he = np.copy(self.he_start)
+        i = 0
+        while np.any(rotate==0):
+            #-- fill in the values
+            jdv = self.e[he][:,1]; idv = self.e[he][:,0];
+            I += [2*idv, 2*idv, 2*idv+1, 2*idv+1]
+            J += [idv, jdv, idv, jdv]
+            V += [-Vjs_inv[:,0,i], Vjs_inv[:,0,i], -Vjs_inv[:,1,i], Vjs_inv[:,1,i]]
+
+            #-- circulate CW
+            he = self.op[he]
+            he = self.nex[he]
+            i+=1
+            #-- update rot mask
+            rot_mask = (self.he_start == he) * (rotate == 0)
+            rotate[rot_mask] = i
+
+
+        I = np.concatenate(I)
+        J = np.concatenate(J)
+        V = np.concatenate(V)
         #
         A = sp.sparse.csr_matrix((V, (I, J)), shape=(2 * self.v.shape[0],self.v.shape[0]))
+        self.degv = rotate
         self.gradv = A
         return A
     
@@ -549,81 +538,9 @@ class mesh:
         Df = np.stack(Df, axis=0)
         self.Df = Df
         return Df
-    
-    ## hks
-    def hks_desc(self, Nhks = 10, K = 300, t = None):#Mhks = 200
-        D = self.eig[:,:K]**2
-        abs_val = np.abs(self.vals)
-        ## ts pre-shot
-        if t is None:
-            log_ts = np.linspace(np.log(0.005), np.log(0.2), Nhks)
-            t = np.exp(log_ts);
-        T = np.exp(-abs_val[:K, None] * t[None,:])
-        hks = D @ T
-        self.hks = hks
-        return hks
-    
-    ###### new vertex operators
-    def grad_vert_op2(self):
-        I = []
-        J = []
-        V = []
-
-        #
-        Vjs = []
-        rotate = np.zeros(self.v.shape[0], dtype=int)  #will keep in degree of vertex
-        he = np.copy(self.he_start)
-        i = 0
-        while np.any(rotate==0):
-            #-- get [vj] and store it in X; same for fj - fi in f
-            lij = np.linalg.norm(self.v[self.e[he][:,1]] - self.v[self.e[he][:,0]], axis=1)
-            aij = self.he_angles_norm[he]
-            vj = lij[:, None] * np.cos(np.stack([aij, np.pi/2 - aij], axis=-1))
-            vj[rotate>0]=0 # do not add values if cycle done
-            Vjs+=[vj]
-
-            #-- circulate CW
-            he = self.op[he]
-            he = self.nex[he]
-            i+=1
-            #-- update rot mask once cycle is done
-            rot_mask = (self.he_start == he) * (rotate == 0)
-            rotate[rot_mask] = i
-
-        #-- build and invert local systems
-        Vjs = np.stack(Vjs, axis=1)
-        Vjs_inv = np.linalg.pinv(Vjs)
-
-        #-- new rotation around the vertex to add in the coefficients to the sparse matrix
-        rotate = np.zeros(self.v.shape[0], dtype=int)  #will keep in degree of vertex
-        he = np.copy(self.he_start)
-        i = 0
-        while np.any(rotate==0):
-            #-- fill in the values
-            jdv = self.e[he][:,1]; idv = self.e[he][:,0];
-            I += [2*idv, 2*idv, 2*idv+1, 2*idv+1]
-            J += [idv, jdv, idv, jdv]
-            V += [-Vjs_inv[:,0,i], Vjs_inv[:,0,i], -Vjs_inv[:,1,i], Vjs_inv[:,1,i]]
-
-            #-- circulate CW
-            he = self.op[he]
-            he = self.nex[he]
-            i+=1
-            #-- update rot mask
-            rot_mask = (self.he_start == he) * (rotate == 0)
-            rotate[rot_mask] = i
 
 
-        I = np.concatenate(I)
-        J = np.concatenate(J)
-        V = np.concatenate(V)
-        #
-        A = sp.sparse.csr_matrix((V, (I, J)), shape=(2 * self.v.shape[0],self.v.shape[0]))
-        self.degv = rotate
-        #self.gradv = A
-        return A
-
-
+    ###### divergence operators. Although one can just use the dual gradient
     def div_c_vert_op(self):
         I = []
         J = []
@@ -670,6 +587,7 @@ class mesh:
         #self.gradv = A
         return A
     
+    ## slightly different divergence operator (using Stokes' formula)
     def div_c_vert_op2(self):
         I = []
         J = []
