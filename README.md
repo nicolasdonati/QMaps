@@ -17,7 +17,7 @@ This repository contains Python implementation for complex functional maps and a
 </p>
 
 ## Use Complex Functional Maps
-All the necessary code for complex functional maps is in the ``Tools`` Folder. Apart from the standard libraries (numpy, scipy), you will need python bindings for ``libigl``, which can be installed for instance with:
+All the necessary code for complex functional maps is in the ``Tools/`` folder. Apart from the standard libraries (numpy, scipy), you will need python bindings for ``libigl``, which can be installed for instance with:
 
     conda install -c conda-forge igl
 
@@ -25,11 +25,15 @@ Also, to run some of the scripts we provide to reproduce some of the figures and
 
     conda install -c conda-forge meshplot
 
-We provide jupyter notebooks and their corresponding python scripts to show how to use complex functional maps in the scenarii we propose in the paper. 
+We provide jupyter notebooks and their corresponding python scripts to show how to use complex functional maps in the scenarii we propose in the paper. To that end, we provide FAUST re-meshed and SMAL re-meshed datasets in the ``data/`` folder.
 
 Namely, we show:
-* how to perform vector field transfer using complex functional maps, and a visualization of the transfer
-* how to use bijective Zoomout with discrete Optimisation (from Ren et al., SGP 2021) with our complex functional maps modification
+* how to perform vector field transfer using complex functional maps, and a visualization of the transfer.
+  * in ``VF_transfer.ipynb`` we load two shapes of the FAUST re-meshed dataset, get an accurate complex functional map using a reduced ground-truth functional map and transfer vector fields in a low spectral basis.
+  * in ``VF_table.ipynb`` we provide a script to compare our vector field transfer to that of Wang et al. and Azencot et al., as desribed in the paper.
+* how to use bijective Zoomout with discrete Optimisation (from Ren et al., SGP 2021) with our complex functional maps modification.
+  * in ``SMAL_example.ipynb`` we load two shapes of the SMAL re-meshed dataset and compute maps between them using these different Zoomout (complex or not) algoritms.
+  * in ``SMAL_table.ipynb`` we report the script used to get Table 3 (and Figure 9) of the paper.
 
 ## Citation
 If you use our work, please cite our paper.
