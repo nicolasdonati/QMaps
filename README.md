@@ -25,11 +25,11 @@ Also, to run some of the scripts we provide to reproduce some of the figures and
 
     conda install -c conda-forge meshplot
 
-With meshplot one can directly display shapes interactively for instance in a Jupyter cell, as shown in the next images below, where we represent a vector field transfer and a map obtained with our method.
+With meshplot one can directly display shapes interactively for instance in a Jupyter cell, as shown in the next images below, where we represent a vector field transfer (in the script ``VF_transfer.ipynb``) and a map obtained with our method (in the script ``SMAL_example.ipynb``).
 
 <p float="left">
-<img src="images/mp_VF_transfer.png" height="200">
-<img src="images/mp_map.png" height="200">
+<img src="images/mp_VF_transfer.png" height="250">
+<img src="images/mp_map.png" height="250">
 </p>
 
 We provide jupyter notebooks and their corresponding python scripts to show how to use complex functional maps in the scenarii we propose in the paper. To that end, we provide FAUST re-meshed and SMAL re-meshed datasets in the ``data/`` folder.
