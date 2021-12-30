@@ -5,8 +5,8 @@ This repository contains Python implementation for complex functional maps and a
 > **Complex Functional Maps**<br/>
 > Nicolas Donati, Etienne Corman, Simone Melzi, Maks Ovsjanikov<br/>
 > In *CGF 2022*<br/>
+> [PDF](https://arxiv.org/pdf/2112.09546.pdf)
 <!--
-> [PDF](),
 > [Video](https://www.youtube.com/watch?v=U6wtw6W4x3I),
 > [Project page](http://igl.ethz.ch/projects/instant-meshes/)
 -->
